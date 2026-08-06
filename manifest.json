@@ -1,0 +1,15 @@
+{
+  "name": "Dia 10/10, Papis Estará Nota 10! — Painel de Transformação",
+  "short_name": "Papis Nota 10",
+  "description": "Painel de acompanhamento do programa de transformação física de 60 dias.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#1B211E",
+  "theme_color": "#6FA98C",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

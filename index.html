@@ -462,6 +462,16 @@ select{
     <div class="section-title">Kanban do programa</div>
     <div class="filters">
       <select id="filterSemana"><option value="">Semana (todas)</option></select>
+      <select id="filterDia">
+        <option value="">Dia da semana (todos)</option>
+        <option value="Segunda">Segunda</option>
+        <option value="Terça">Terça</option>
+        <option value="Quarta">Quarta</option>
+        <option value="Quinta">Quinta</option>
+        <option value="Sexta">Sexta</option>
+        <option value="Sábado">Sábado</option>
+        <option value="Domingo">Domingo</option>
+      </select>
       <select id="filterTipo"><option value="">Tipo (todos)</option></select>
       <select id="filterCategoria"><option value="">Categoria (todas)</option></select>
     </div>
@@ -1062,11 +1072,19 @@ function iconForCard(c){
   return EXERCISE_ICONS.STRETCH;
 }
 
+const DIAS_SEMANA = ['Domingo','Segunda','Terça','Quarta','Quinta','Sexta','Sábado'];
+function diaSemanaDeData(dataStr){
+  if(!dataStr) return '';
+  const d = new Date(dataStr + 'T00:00:00');
+  return DIAS_SEMANA[d.getDay()];
+}
+
 function renderKanban(){
   const semanas = uniqueVals(state.kanban,'semana');
   const tipos = uniqueVals(state.kanban,'tipo');
   const categorias = uniqueVals(state.kanban,'categoria');
   const fS = document.getElementById('filterSemana');
+  const fD = document.getElementById('filterDia');
   const fT = document.getElementById('filterTipo');
   const fC = document.getElementById('filterCategoria');
   if(fS.options.length<=1){
@@ -1076,6 +1094,7 @@ function renderKanban(){
   }
   const filtered = state.kanban.filter(k=>
     (!fS.value || k.semana===fS.value) &&
+    (!fD.value || diaSemanaDeData(k.dataPrevista)===fD.value) &&
     (!fT.value || k.tipo===fT.value) &&
     (!fC.value || k.categoria===fC.value)
   );
@@ -1087,6 +1106,7 @@ function renderKanban(){
         <div class="kcard" draggable="true" data-id="${c.id}">
           <div class="kcard-icon">${iconForCard(c)}</div>
           <div class="ex">${c.exercicio}</div>
+          <div class="meta">${diaSemanaDeData(c.dataPrevista)} · ${c.dataPrevista}</div>
           <div class="meta">${c.objetivo}</div>
           <div class="meta">${c.duracao} · ${c.series} x ${c.reps} · ${c.carga}</div>
           <div class="tags"><span class="tag">${c.tipo}</span><span class="tag">${c.categoria}</span></div>
@@ -1143,7 +1163,7 @@ function renderKanban(){
     });
   });
 }
-['filterSemana','filterTipo','filterCategoria'].forEach(id=>{
+['filterSemana','filterDia','filterTipo','filterCategoria'].forEach(id=>{
   document.getElementById(id).addEventListener('change', renderKanban);
 });
 

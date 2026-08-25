@@ -378,7 +378,7 @@ select{
       </div>
 
       <div id="regMedidasWrapper">
-        <div class="reg-subtitle">Medidas corporais <span style="color:var(--text-dim);font-weight:400;text-transform:none;">(somente aos domingos)</span></div>
+        <div class="reg-subtitle">Medidas corporais</div>
         <div id="regMedidasConteudo">
           <div class="reg-form-grid">
             <div><label>Peso (kg)</label><input type="number" step="0.1" id="regPeso"></div>
@@ -392,8 +392,8 @@ select{
             <div><label>Panturrilha (cm)</label><input type="number" step="0.1" id="regPanturrilha"></div>
             <div><label>FC repouso (bpm)</label><input type="number" id="regFc"></div>
           </div>
+          <p style="font-size:11px;color:var(--text-dim);margin:8px 0 0;">Preencha só o que for medir hoje — o que ficar em branco simplesmente não entra nos gráficos nem nas tendências daquele dia (não conta como zero).</p>
         </div>
-        <p id="regMedidasAviso" style="display:none;font-size:12px;color:var(--text-dim);margin:0;">As medidas corporais aparecem somente aos domingos, para manter o registro diário rápido. Escolha um domingo na data acima para preenchê-las.</p>
       </div>
 
       <div class="reg-subtitle">Alimentação (6 refeições + água)</div>
@@ -844,9 +844,9 @@ function upsertPapisEntry(date, dados){
   return entry;
 }
 
-// ---- NOTA ESPIRITUAL: cumprimento das 5 práticas diárias ----
+// ---- NOTA ESPIRITUAL: cumprimento das 5 práticas diárias. null = sem registro naquele dia ----
 function notaEspiritual(entry){
-  if(!entry) return 0;
+  if(!entry) return null;
   const itens = ['missa','lectio','biblia','exame','terco'];
   const feitos = itens.filter(k=>entry[k]).length;
   return Math.round((feitos/itens.length)*100);
@@ -854,7 +854,7 @@ function notaEspiritual(entry){
 
 // ---- NOTA CAPACITAÇÃO: leitura (meta 50 pág/dia) + FP&A + idioma + preparação concurso ----
 function notaCapacitacao(entry){
-  if(!entry) return 0;
+  if(!entry) return null;
   const notaLeitura = Math.min(100, Math.round(((entry.leituraPaginas||0)/META_PAGINAS_DIA)*100));
   const notaFpa = entry.fpaFeito ? 100 : 0;
   const notaIdioma = entry.idiomaFeito ? 100 : 0;
@@ -869,56 +869,69 @@ function notaCapacitacao(entry){
 
 // ---- NOTA ENTRETENIMENTO: gaita + ukulele + mágica (peso igual) ----
 function notaEntretenimento(entry){
-  if(!entry) return 0;
+  if(!entry) return null;
   const itens = ['gaitaFeito','ukuleleFeito','magicaFeito'];
   const feitos = itens.filter(k=>entry[k]).length;
   return Math.round((feitos/itens.length)*100);
 }
 
-// ---- NOTA FÍSICA: atividade + alimentação + corpóreo (corpóreo só domingo) ----
-function notaFisica(date, entry){
-  const workoutsDoDia = state.workouts.filter(w=>w.date===date);
-  const notaAtividade = workoutsDoDia.length ? Math.round((workoutsDoDia.filter(w=>w.done).length/workoutsDoDia.length)*100) : 0;
-
-  let notaAlimentacao = 0;
-  if(entry){
-    const feitas = entry.refeicoes ? REFEICOES_PADRAO.filter(r=>entry.refeicoes[r.key]).length : 0;
-    const notaRefeicoes = Math.round((feitas/REFEICOES_PADRAO.length)*100);
-    const notaAgua = Math.min(100, Math.round(((entry.aguaLitros||0)/META_AGUA_LITROS)*100));
-    notaAlimentacao = Math.round(notaRefeicoes*PESOS_ALIMENTACAO.refeicoes + notaAgua*PESOS_ALIMENTACAO.agua);
-  }
-
-  if(isDomingo(date)){
-    const temMedida = state.measurements.some(m=>m.date===date);
-    const notaCorporeo = temMedida ? 100 : 0;
-    return Math.round(notaAtividade*PESOS_NOTA_FISICA.atividade + notaAlimentacao*PESOS_NOTA_FISICA.alimentacao + notaCorporeo*PESOS_NOTA_FISICA.corporeo);
-  } else {
-    // Dias de semana a sábado: sem corpóreo — redistribui o peso proporcionalmente
-    const somaPesos = PESOS_NOTA_FISICA.atividade + PESOS_NOTA_FISICA.alimentacao;
-    const pAtividade = PESOS_NOTA_FISICA.atividade/somaPesos;
-    const pAlimentacao = PESOS_NOTA_FISICA.alimentacao/somaPesos;
-    return Math.round(notaAtividade*pAtividade + notaAlimentacao*pAlimentacao);
-  }
+// ---- Combina componentes existentes com renormalização de peso (ignora os ausentes) ----
+function combinarComPesos(componentes){
+  const validos = componentes.filter(c => c.valor !== null && c.valor !== undefined);
+  if(!validos.length) return null;
+  const pesoTotal = validos.reduce((s,c)=>s+c.peso, 0);
+  if(pesoTotal === 0) return null;
+  return Math.min(100, Math.round(validos.reduce((s,c)=> s + c.valor*c.peso, 0) / pesoTotal));
 }
 
-// ---- NOTA GERAL PAPIS: combinação ponderada das 4 dimensões ----
+// ---- NOTA FÍSICA: atividade + alimentação + corpóreo. Corpóreo conta em QUALQUER dia com medida registrada ----
+function notaFisica(date, entry){
+  const workoutsDoDia = state.workouts.filter(w=>w.date===date);
+  const notaAtividade = workoutsDoDia.length ? Math.round((workoutsDoDia.filter(w=>w.done).length/workoutsDoDia.length)*100) : null;
+
+  let notaAlimentacao = null;
+  if(entry && entry.refeicoes){
+    const feitas = REFEICOES_PADRAO.filter(r=>entry.refeicoes[r.key]).length;
+    const notaRefeicoes = Math.round((feitas/REFEICOES_PADRAO.length)*100);
+    const temAgua = entry.aguaLitros !== null && entry.aguaLitros !== undefined;
+    if(temAgua){
+      const notaAgua = Math.min(100, Math.round((entry.aguaLitros/META_AGUA_LITROS)*100));
+      notaAlimentacao = Math.round(notaRefeicoes*PESOS_ALIMENTACAO.refeicoes + notaAgua*PESOS_ALIMENTACAO.agua);
+    } else {
+      notaAlimentacao = notaRefeicoes;
+    }
+  }
+
+  const medidaDoDia = state.measurements.find(m=>m.date===date);
+  const camposCorporais = ['peso','cintura','quadril','peitoral','braco','antebraco','coxa','panturrilha'];
+  const temMedida = medidaDoDia ? camposCorporais.some(k=> medidaDoDia[k] !== null && medidaDoDia[k] !== undefined) : false;
+  const notaCorporeo = temMedida ? 100 : null;
+
+  return combinarComPesos([
+    {valor: notaAtividade, peso: PESOS_NOTA_FISICA.atividade},
+    {valor: notaAlimentacao, peso: PESOS_NOTA_FISICA.alimentacao},
+    {valor: notaCorporeo, peso: PESOS_NOTA_FISICA.corporeo}
+  ]);
+}
+
+// ---- NOTA GERAL: combinação ponderada das 4 dimensões, ignorando as que não têm dado no dia ----
 function calcularNotasDoDia(date){
   const entry = getPapisEntry(date);
   const espiritual = notaEspiritual(entry);
   const fisica = notaFisica(date, entry);
   const capacitacao = notaCapacitacao(entry);
   const entretenimento = notaEntretenimento(entry);
-  const geral = Math.min(100, Math.round(
-    espiritual*PESOS_NOTA_GERAL.espiritual +
-    fisica*PESOS_NOTA_GERAL.fisica +
-    capacitacao*PESOS_NOTA_GERAL.capacitacao +
-    entretenimento*PESOS_NOTA_GERAL.entretenimento
-  ));
+  const geral = combinarComPesos([
+    {valor: espiritual, peso: PESOS_NOTA_GERAL.espiritual},
+    {valor: fisica, peso: PESOS_NOTA_GERAL.fisica},
+    {valor: capacitacao, peso: PESOS_NOTA_GERAL.capacitacao},
+    {valor: entretenimento, peso: PESOS_NOTA_GERAL.entretenimento}
+  ]);
   return {espiritual, fisica, capacitacao, entretenimento, geral};
 }
 
 function diasPapisValidos(){
-  // Só considera datas a partir do início oficial da nova arquitetura.
+  // Qualquer dia com ALGUMA atividade registrada (treino, medida ou registro PAPIS).
   const datas = new Set([
     ...state.papis.map(p=>p.date),
     ...state.workouts.map(w=>w.date),
@@ -927,11 +940,17 @@ function diasPapisValidos(){
   return [...datas].filter(d => d >= PAPIS_START_DATE).sort();
 }
 
+function diasComEntradaPapis(){
+  // Só os dias em que o formulário de Registro Diário (Espiritual/Capacitação/Entretenimento) foi de fato salvo.
+  return [...new Set(state.papis.map(p=>p.date))].filter(d => d >= PAPIS_START_DATE).sort();
+}
+
 function notaGeralAtual(){
   const dias = diasPapisValidos();
-  if(!dias.length) return {espiritual:0, fisica:0, capacitacao:0, entretenimento:0, geral:0, temDados:false};
+  if(!dias.length) return {espiritual:null, fisica:null, capacitacao:null, entretenimento:null, geral:0, temDados:false};
   const ultimoDia = dias[dias.length-1];
-  return {...calcularNotasDoDia(ultimoDia), temDados:true};
+  const notas = calcularNotasDoDia(ultimoDia);
+  return {...notas, geral: notas.geral===null?0:notas.geral, temDados:true};
 }
 
 function faixaNotaGeral(nota){
@@ -943,8 +962,8 @@ function faixaNotaGeral(nota){
 }
 
 function consistenciaAtividade(chave){
-  // chave: 'missa','lectio','biblia','exame','terco','fpaFeito','idiomaFeito','gaitaFeito','ukuleleFeito','magicaFeito'
-  const dias = diasPapisValidos();
+  // chave: 'missa','lectio','biblia','exame','terco','fpaFeito','idiomaFeito','concursoFeito','gaitaFeito','ukuleleFeito','magicaFeito'
+  const dias = diasComEntradaPapis();
   let cumpridos = 0, sequenciaAtual = 0, melhorSequencia = 0;
   dias.forEach(d=>{
     const entry = getPapisEntry(d);
@@ -1088,7 +1107,9 @@ function melhorJanela(dias, tamanho){
   for(let i=0;i<dias.length;i++){
     const janela = dias.slice(Math.max(0,i-tamanho+1), i+1);
     if(janela.length < Math.min(tamanho, dias.length)) continue;
-    const media = janela.reduce((s,d)=>s+calcularNotasDoDia(d).geral,0)/janela.length;
+    const valores = janela.map(d=>calcularNotasDoDia(d).geral).filter(v=>v!==null && v!==undefined);
+    if(!valores.length) continue;
+    const media = valores.reduce((s,v)=>s+v,0)/valores.length;
     melhor = Math.max(melhor, Math.round(media));
   }
   return melhor;
@@ -1136,14 +1157,13 @@ function renderRankingPessoal(){
 }
 
 function mediaDimensoesPeriodo(diasArr){
-  if(!diasArr.length) return {espiritual:0,fisica:0,capacitacao:0,entretenimento:0,geral:0};
-  const acc = {espiritual:0,fisica:0,capacitacao:0,entretenimento:0,geral:0};
-  diasArr.forEach(d=>{
-    const n = calcularNotasDoDia(d);
-    acc.espiritual+=n.espiritual; acc.fisica+=n.fisica; acc.capacitacao+=n.capacitacao; acc.entretenimento+=n.entretenimento; acc.geral+=n.geral;
+  const campos = ['espiritual','fisica','capacitacao','entretenimento','geral'];
+  const resultado = {};
+  campos.forEach(campo=>{
+    const valores = diasArr.map(d=>calcularNotasDoDia(d)[campo]).filter(v=>v!==null && v!==undefined);
+    resultado[campo] = valores.length ? Math.round(valores.reduce((s,v)=>s+v,0)/valores.length) : 0;
   });
-  const c = diasArr.length;
-  return {espiritual:Math.round(acc.espiritual/c), fisica:Math.round(acc.fisica/c), capacitacao:Math.round(acc.capacitacao/c), entretenimento:Math.round(acc.entretenimento/c), geral:Math.round(acc.geral/c)};
+  return resultado;
 }
 
 function renderResumoSemanal(){
@@ -1381,7 +1401,7 @@ function calcularTendenciaFit(dados, key){
 }
 
 function calcularConsistenciaGeral(getNota){
-  const dias = diasPapisValidos();
+  const dias = diasComEntradaPapis();
   let cumpridos=0, sequenciaAtual=0, melhorSequencia=0;
   dias.forEach(d=>{
     const ok = getNota(d) >= 80;
@@ -1402,7 +1422,7 @@ function renderEspiritual(){
       <div><div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Sequência atual</div><div style="font-size:24px;font-weight:700;">${cons.sequenciaAtual}</div></div>
       <div><div style="font-size:11px;color:var(--text-dim);text-transform:uppercase;">Melhor sequência</div><div style="font-size:24px;font-weight:700;">${cons.melhorSequencia}</div></div>
     </div>
-    <p style="font-size:11px;color:var(--text-dim);margin:10px 0 0;">"Dia cumprido" considera Nota Espiritual ≥ 80 (pelo menos 4 das 5 práticas no dia).</p>
+    <p style="font-size:11px;color:var(--text-dim);margin:10px 0 0;">"Dia cumprido" considera Nota Espiritual ≥ 80 (pelo menos 4 das 5 práticas no dia). Dias sem nenhum registro não entram nessa conta.</p>
   `;
 
   const atividades = [
@@ -1418,7 +1438,7 @@ function renderEspiritual(){
     </div>`;
   }).join('');
 
-  const dias = diasPapisValidos();
+  const dias = diasComEntradaPapis();
   const notas = dias.map(d=>calcularNotasDoDia(d).espiritual);
   if(chartInstances['espiritual']) chartInstances['espiritual'].destroy();
   chartInstances['espiritual'] = new Chart(document.getElementById('chartEspiritual'), {
@@ -1436,7 +1456,7 @@ function renderEspiritual(){
 }
 
 function renderCapacitacao(){
-  const dias = diasPapisValidos();
+  const dias = diasComEntradaPapis();
   const paginasPorDia = dias.map(d=>{ const e=getPapisEntry(d); return e ? (e.leituraPaginas||0) : 0; });
   const totalPaginas = paginasPorDia.reduce((s,v)=>s+v,0);
   const mediaDiaria = dias.length ? Math.round(totalPaginas/dias.length) : 0;
@@ -1484,7 +1504,7 @@ function renderCapacitacao(){
 }
 
 function renderEntretenimento(){
-  const dias = diasPapisValidos();
+  const dias = diasComEntradaPapis();
   const habilidades = [
     {key:'gaitaFeito', tempoKey:'gaitaTempo', label:'Gaita', color:'#6FA98C'},
     {key:'ukuleleFeito', tempoKey:'ukuleleTempo', label:'Ukulele', color:'#3FA7D6'},
@@ -1530,9 +1550,9 @@ function janelaDias(dias, tamanho, deslocamento){
 }
 
 function mediaNotas(diasJanela, campo){
-  if(!diasJanela.length) return 0;
-  const soma = diasJanela.reduce((s,d)=> s + calcularNotasDoDia(d)[campo], 0);
-  return Math.round(soma/diasJanela.length);
+  const valores = diasJanela.map(d=>calcularNotasDoDia(d)[campo]).filter(v=>v!==null && v!==undefined);
+  if(!valores.length) return 0;
+  return Math.round(valores.reduce((s,v)=>s+v,0)/valores.length);
 }
 
 function renderHeatmapCalendar(){
@@ -1983,17 +2003,6 @@ function renderRefeicoesGrid(){
 }
 renderRefeicoesGrid();
 document.getElementById('regDate').value = PAPIS_START_DATE;
-atualizarVisibilidadeMedidas();
-
-function atualizarVisibilidadeMedidas(){
-  const date = document.getElementById('regDate').value;
-  const conteudo = document.getElementById('regMedidasConteudo');
-  const aviso = document.getElementById('regMedidasAviso');
-  const ehDomingo = date && isDomingo(date);
-  conteudo.style.display = ehDomingo ? '' : 'none';
-  aviso.style.display = ehDomingo ? 'none' : '';
-}
-document.getElementById('regDate').addEventListener('change', atualizarVisibilidadeMedidas);
 
 document.getElementById('regPeso').addEventListener('input', ()=>{
   const peso = numOrNull('regPeso');
@@ -2004,28 +2013,24 @@ document.getElementById('btnSalvarRegistro').addEventListener('click', ()=>{
   const date = document.getElementById('regDate').value;
   if(!date){ alert('Escolha uma data antes de salvar.'); return; }
 
-  const ehDomingo = isDomingo(date);
-
-  if(ehDomingo){
-    upsertByDate(state.measurements, date, {
-      peso: numOrNull('regPeso'),
-      imc: numOrNull('regPeso') ? parseFloat(calcBMI(numOrNull('regPeso'))) : null,
-      cintura: numOrNull('regCintura'),
-      quadril: numOrNull('regQuadril'),
-      peitoral: numOrNull('regPeitoral'),
-      braco: numOrNull('regBraco'),
-      antebraco: numOrNull('regAntebraco'),
-      coxa: numOrNull('regCoxa'),
-      panturrilha: numOrNull('regPanturrilha'),
-      fcRepouso: numOrNull('regFc'),
-      sono: numOrNull('regSono'),
-      energia: numOrNull('regEnergia'),
-      dorJoelho: numOrNull('regDor'),
-      tempoBike: numOrNull('regCardioMin'),
-      volumeTreino: numOrNull('regVolume'),
-      cargaMedia: numOrNull('regCarga')
-    });
-  }
+  upsertByDate(state.measurements, date, {
+    peso: numOrNull('regPeso'),
+    imc: numOrNull('regPeso') ? parseFloat(calcBMI(numOrNull('regPeso'))) : null,
+    cintura: numOrNull('regCintura'),
+    quadril: numOrNull('regQuadril'),
+    peitoral: numOrNull('regPeitoral'),
+    braco: numOrNull('regBraco'),
+    antebraco: numOrNull('regAntebraco'),
+    coxa: numOrNull('regCoxa'),
+    panturrilha: numOrNull('regPanturrilha'),
+    fcRepouso: numOrNull('regFc'),
+    sono: numOrNull('regSono'),
+    energia: numOrNull('regEnergia'),
+    dorJoelho: numOrNull('regDor'),
+    tempoBike: numOrNull('regCardioMin'),
+    volumeTreino: numOrNull('regVolume'),
+    cargaMedia: numOrNull('regCarga')
+  });
 
   const treinoFeito = document.getElementById('regTreinoFeito').value === 'sim';
   upsertByDate(state.workouts, date, {

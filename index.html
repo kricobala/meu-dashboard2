@@ -675,26 +675,26 @@ const DEFAULT_KANBAN = [{"semana": "Semana 1", "tipo": "Casa", "grupo": "Quadrí
 let state = {
   profile:{ pesoInicial:146, meta:100, alturaM:1.84 },
   measurements:[
-    {date:'2026-08-31', peso:146, cintura:130, quadril:128, peitoral:118, braco:38, antebraco:31, coxa:68, panturrilha:42, fcRepouso:82, sono:6, energia:5, dorJoelho:1, tempoBike:10, volumeTreino:20, cargaMedia:4},
+    {date:'2026-08-25', peso:146, cintura:130, quadril:128, peitoral:118, braco:38, antebraco:31, coxa:68, panturrilha:42, fcRepouso:82, sono:6, energia:5, dorJoelho:1, tempoBike:10, volumeTreino:20, cargaMedia:4},
     {date:'2026-08-31', peso:144.8, cintura:129, quadril:127.5, peitoral:118, braco:38, antebraco:31, coxa:68, panturrilha:42, fcRepouso:80, sono:6, energia:6, dorJoelho:1, tempoBike:15, volumeTreino:24, cargaMedia:4}
   ],
   workouts:[
-    {date:'2026-08-31', done:true, type:'Força A (Casa)', cardioMin:10},
-    {date:'2026-08-31', done:true, type:'Cardio+Estabilização', cardioMin:12},
-    {date:'2026-08-31', done:true, type:'Força B (Casa)', cardioMin:10},
-    {date:'2026-08-31', done:false, type:'Cardio+Estabilização', cardioMin:0},
-    {date:'2026-08-31', done:true, type:'Força A (Casa)', cardioMin:10},
-    {date:'2026-08-31', done:true, type:'Funcional/Equilíbrio', cardioMin:12},
+    {date:'2026-08-25', done:true, type:'Força A (Casa)', cardioMin:10},
+    {date:'2026-08-26', done:true, type:'Cardio+Estabilização', cardioMin:12},
+    {date:'2026-08-27', done:true, type:'Força B (Casa)', cardioMin:10},
+    {date:'2026-08-28', done:false, type:'Cardio+Estabilização', cardioMin:0},
+    {date:'2026-08-29', done:true, type:'Força A (Casa)', cardioMin:10},
+    {date:'2026-08-30', done:true, type:'Funcional/Equilíbrio', cardioMin:12},
     {date:'2026-08-31', done:true, type:'Recuperação Ativa', cardioMin:20}
   ],
   joints:[
-    {date:'2026-08-31', joelho:'Ambos', dor:1, rigidez:1, inchaco:'Não', limitacao:'Nenhuma', obs:'Início do programa'},
-    {date:'2026-08-31', joelho:'Direito', dor:2, rigidez:2, inchaco:'Não', limitacao:'Leve ao flexionar', obs:'Após step-up, reduzido para F1'},
+    {date:'2026-08-25', joelho:'Ambos', dor:1, rigidez:1, inchaco:'Não', limitacao:'Nenhuma', obs:'Início do programa'},
+    {date:'2026-08-28', joelho:'Direito', dor:2, rigidez:2, inchaco:'Não', limitacao:'Leve ao flexionar', obs:'Após step-up, reduzido para F1'},
     {date:'2026-08-31', joelho:'Ambos', dor:0, rigidez:0, inchaco:'Não', limitacao:'Nenhuma', obs:'Fim da semana 1'}
   ],
   checklist:[
-    {date:'2026-08-31', treino:true, cardio:true, mobilidade:true, alongamento:true, peso:true, sono:true, hidratacao:true, fotos:false, dor:true},
-    {date:'2026-08-31', treino:true, cardio:true, mobilidade:true, alongamento:false, peso:false, sono:true, hidratacao:true, fotos:false, dor:true}
+    {date:'2026-08-25', treino:true, cardio:true, mobilidade:true, alongamento:true, peso:true, sono:true, hidratacao:true, fotos:false, dor:true},
+    {date:'2026-08-26', treino:true, cardio:true, mobilidade:true, alongamento:false, peso:false, sono:true, hidratacao:true, fotos:false, dor:true}
   ],
   photos:[],
   kanban: JSON.parse(JSON.stringify(DEFAULT_KANBAN)),
@@ -1903,6 +1903,7 @@ function fileToBase64(file){
 }
 
 document.getElementById('btnSalvarFoto').addEventListener('click', async ()=>{
+  if(!state.photos) state.photos = [];
   const date = document.getElementById('photoDate').value;
   if(!date){ alert('Escolha uma data antes de salvar.'); return; }
   const fFrontal = document.getElementById('photoFrontal').files[0];
@@ -2423,11 +2424,15 @@ document.getElementById('btnClear').addEventListener('click', ()=>{
   renderAll();
 });
 
+let contadorExport = 0;
 document.getElementById('btnExport').addEventListener('click', ()=>{
   const blob = new Blob([JSON.stringify(state, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
-  a.href = url; a.download = 'dashboard_transformacao_'+new Date().toISOString().slice(0,10)+'.json';
+  const agora = new Date();
+  const carimbo = agora.toISOString().replace(/[:.]/g,'-').slice(0,23); // ex: 2026-08-25T14-32-05-123
+  contadorExport++;
+  a.href = url; a.download = 'dashboard_transformacao_'+carimbo+'-'+contadorExport+'.json';
   a.click();
   URL.revokeObjectURL(url);
 });
@@ -2435,6 +2440,18 @@ document.getElementById('btnExport').addEventListener('click', ()=>{
 document.getElementById('btnImport').addEventListener('click', ()=> document.getElementById('fileImport').click());
 document.getElementById('btnLoadQuick').addEventListener('click', ()=> document.getElementById('fileImport').click());
 document.getElementById('btnSaveQuick').addEventListener('click', ()=> document.getElementById('btnExport').click());
+function normalizarEstado(s){
+  s.profile = s.profile || { pesoInicial:146, meta:100, alturaM:1.84 };
+  s.measurements = s.measurements || [];
+  s.workouts = s.workouts || [];
+  s.joints = s.joints || [];
+  s.checklist = s.checklist || [];
+  s.kanban = s.kanban || JSON.parse(JSON.stringify(DEFAULT_KANBAN));
+  s.photos = s.photos || [];
+  s.papis = s.papis || [];
+  return s;
+}
+
 document.getElementById('fileImport').addEventListener('change', (e)=>{
   const file = e.target.files[0];
   if(!file) return;
@@ -2442,7 +2459,7 @@ document.getElementById('fileImport').addEventListener('change', (e)=>{
   reader.onload = (ev)=>{
     try{
       const imported = JSON.parse(ev.target.result);
-      state = imported;
+      state = normalizarEstado(imported);
       renderAll();
     }catch(err){
       alert('Não foi possível ler o arquivo. Verifique se é um JSON válido exportado por este painel.');

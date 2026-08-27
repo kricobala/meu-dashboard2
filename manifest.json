@@ -1,7 +1,7 @@
 {
   "name": "Dia 10/10, Papis Estará Nota 10! — Painel de Transformação",
   "short_name": "Papis Nota 10",
-  "description": "Painel de acompanhamento do programa de transformação física de 46 dias.",
+  "description": "Painel de acompanhamento do programa de transformação física de 41 dias.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

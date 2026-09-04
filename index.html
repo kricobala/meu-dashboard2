@@ -245,6 +245,26 @@ table.data td{padding:8px 10px;border-bottom:1px solid var(--line);}
   font-size:10px; font-weight:700; padding:2px 8px; border-radius:10px;
   box-shadow:0 2px 6px rgba(0,0,0,0.3);
 }
+#toastContainer{
+  position:fixed; top:16px; left:50%; transform:translateX(-50%);
+  z-index:9999; display:flex; flex-direction:column; gap:8px; align-items:center;
+  pointer-events:none;
+}
+.toast-feedback{
+  background:var(--panel); border:2px solid var(--gold); border-radius:12px;
+  padding:14px 22px; box-shadow:0 8px 24px rgba(0,0,0,0.4);
+  font-weight:700; font-size:15px; text-align:center; color:var(--text);
+  animation: toastEntra 0.4s cubic-bezier(0.34,1.56,0.64,1), toastSai 0.5s ease 2.6s forwards;
+  max-width:90vw;
+}
+@keyframes toastEntra{
+  0%{ transform:scale(0.5) translateY(-20px); opacity:0; }
+  100%{ transform:scale(1) translateY(0); opacity:1; }
+}
+@keyframes toastSai{
+  0%{ opacity:1; transform:scale(1); }
+  100%{ opacity:0; transform:scale(0.9) translateY(-10px); }
+}
 .kcard .ex{font-weight:600;margin-bottom:4px;}
 .kcard .meta{color:var(--text-dim);font-size:11px;}
 .kcard .tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px;}
@@ -326,12 +346,22 @@ select{
   <button data-view="kanban">Kanban</button>
 </nav>
 
+<div id="toastContainer"></div>
+
 <main>
 
   <!-- INÍCIO -->
   <section class="view active" id="view-inicio">
+    <div class="card" id="streakCard" style="text-align:center;margin-bottom:16px;padding:20px;"></div>
+
     <div class="section-title">Nota Geral PAPIS</div>
     <div class="card" id="gaugeGeralCard"></div>
+
+    <div class="section-title">💡 Insights automáticos</div>
+    <div class="card" id="insightsCard"></div>
+
+    <div class="section-title">⚖️ Equilíbrio entre as 4 dimensões</div>
+    <div class="card"><div class="chart-wrap"><canvas id="chartRadar"></canvas></div></div>
 
     <div class="card" style="border-color:var(--fire);margin-bottom:20px;">
       <h3 style="margin-bottom:4px;">Seus dados agora são salvos automaticamente</h3>
@@ -700,6 +730,8 @@ select{
 
     <div class="section-title">Kanban do programa</div>
     <div class="filters">
+      <button class="btn primary" id="btnKanbanHoje" style="font-weight:600;">📅 Ver hoje</button>
+      <button class="btn" id="btnKanbanTodas">Ver todas as semanas</button>
       <select id="filterSemana"><option value="">Semana (todas)</option></select>
       <select id="filterDia">
         <option value="">Dia da semana (todos)</option>
@@ -1012,6 +1044,87 @@ function notaGeralAtual(){
   return {...notas, temDados:true};
 }
 
+function calcularStreakAtual(minimo){
+  const dias = diasPapisValidos();
+  let streak = 0;
+  for(let i = dias.length - 1; i >= 0; i--){
+    const nota = calcularNotasDoDia(dias[i]).geral;
+    if(nota >= minimo) streak++;
+    else break;
+  }
+  return streak;
+}
+
+function gerarInsights(){
+  const insights = [];
+  const dias = diasPapisValidos();
+  if(dias.length < 2) return insights;
+
+  // 1. Tendência da Nota Geral (últimos 7 dias vs 7 dias anteriores)
+  const semanaAtual = janelaDias(dias, 7, 0);
+  const semanaAnterior = janelaDias(dias, 7, 1);
+  if(semanaAtual.length && semanaAnterior.length){
+    const mediaAtual = mediaNotas(semanaAtual, 'geral');
+    const mediaAnterior = mediaNotas(semanaAnterior, 'geral');
+    const diff = mediaAtual - mediaAnterior;
+    if(Math.abs(diff) >= 3){
+      insights.push({
+        texto: diff > 0 ? `Sua Nota Geral subiu ${diff} pontos nos últimos 7 dias.` : `Sua Nota Geral caiu ${Math.abs(diff)} pontos nos últimos 7 dias.`,
+        tipo: diff > 0 ? 'positivo' : 'negativo',
+        icone: diff > 0 ? '📈' : '📉'
+      });
+    }
+  }
+
+  // 2. Dimensão com maior variação (pra cima ou pra baixo) na semana
+  if(semanaAtual.length && semanaAnterior.length){
+    const dims = ['espiritual','fisica','capacitacao','entretenimento'];
+    const labels = {espiritual:'Espiritual', fisica:'Física', capacitacao:'Capacitação', entretenimento:'Entretenimento'};
+    let maiorDiff = 0, dimDestaque = null;
+    dims.forEach(d=>{
+      const diff = mediaNotas(semanaAtual, d) - mediaNotas(semanaAnterior, d);
+      if(Math.abs(diff) > Math.abs(maiorDiff)){ maiorDiff = diff; dimDestaque = d; }
+    });
+    if(dimDestaque && Math.abs(maiorDiff) >= 10){
+      insights.push({
+        texto: maiorDiff > 0 ? `${labels[dimDestaque]} foi sua dimensão que mais melhorou essa semana (+${maiorDiff}).` : `${labels[dimDestaque]} foi sua dimensão que mais caiu essa semana (${maiorDiff}).`,
+        tipo: maiorDiff > 0 ? 'positivo' : 'negativo',
+        icone: maiorDiff > 0 ? '⬆️' : '⬇️'
+      });
+    }
+  }
+
+  // 3. Tendência de peso (últimos registros reais, ignorando dias sem medição)
+  const medicoesComPeso = state.measurements.filter(m=>m.peso !== null && m.peso !== undefined).slice(-6);
+  if(medicoesComPeso.length >= 2){
+    const primeiro = medicoesComPeso[0].peso;
+    const ultimo = medicoesComPeso[medicoesComPeso.length-1].peso;
+    const diffPeso = Math.round((ultimo - primeiro) * 10) / 10;
+    if(Math.abs(diffPeso) >= 0.5){
+      insights.push({
+        texto: diffPeso < 0 ? `Seu peso caiu ${Math.abs(diffPeso)} kg nas últimas ${medicoesComPeso.length} pesagens.` : `Seu peso subiu ${diffPeso} kg nas últimas ${medicoesComPeso.length} pesagens.`,
+        tipo: diffPeso < 0 ? 'positivo' : 'negativo',
+        icone: diffPeso < 0 ? '⚖️' : '⚠️'
+      });
+    }
+  }
+
+  // 4. Saúde articular em alerta
+  const saude = calcularSaudeArticular();
+  if(saude && saude.nivel === 'Alerta'){
+    insights.push({ texto: `Sua Saúde Articular está em Alerta (${saude.score}%) — considere reduzir a intensidade hoje.`, tipo:'negativo', icone:'🦵' });
+  }
+
+  // 5. Recorde de sequência
+  const streakAtual = calcularStreakAtual(70);
+  const melhorSequenciaHistorica = melhorSequenciaNotaMinima(70);
+  if(streakAtual > 0 && streakAtual >= melhorSequenciaHistorica){
+    insights.push({ texto: `Você está na sua melhor sequência até agora: ${streakAtual} dias com Nota Geral acima de 70!`, tipo:'positivo', icone:'🏆' });
+  }
+
+  return insights.slice(0, 5);
+}
+
 function faixaNotaGeral(nota){
   if(nota >= 95) return {texto:'Nota 10', cor:'#1F9D55'};
   if(nota >= 85) return {texto:'Excelente', cor:'#5FBE83'};
@@ -1057,6 +1170,56 @@ function calcularXPTotal(){
   });
   xp += ACHIEVEMENTS.filter(a=>a.check(state)).length * 25;
   return xp;
+}
+
+let ultimoNivelConhecido = null;
+let ultimasConquistasConhecidas = null;
+
+function tocarSomFeedback(){
+  try{
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if(!AudioCtx) return;
+    const ctx = new AudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(660, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(990, ctx.currentTime + 0.15);
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    osc.start(ctx.currentTime);
+    osc.stop(ctx.currentTime + 0.3);
+  }catch(err){ /* som é só um extra — se o navegador bloquear, segue sem ele */ }
+}
+
+function mostrarToast(mensagem, comSom){
+  const container = document.getElementById('toastContainer');
+  if(!container) return;
+  const el = document.createElement('div');
+  el.className = 'toast-feedback';
+  el.textContent = mensagem;
+  container.appendChild(el);
+  if(comSom) tocarSomFeedback();
+  setTimeout(()=>{ if(el.parentNode) el.parentNode.removeChild(el); }, 3200);
+}
+
+function verificarMicrofeedback(){
+  const nivelInfo = calcularNivel();
+  if(ultimoNivelConhecido !== null && nivelInfo.nivel > ultimoNivelConhecido){
+    mostrarToast(`🎉 Subiu de nível! Agora você é: ${nivelInfo.nome}`, true);
+  }
+  ultimoNivelConhecido = nivelInfo.nivel;
+
+  const desbloqueadasAgora = new Set(ACHIEVEMENTS.filter(a=>a.check(state)).map(a=>a.name));
+  if(ultimasConquistasConhecidas !== null){
+    desbloqueadasAgora.forEach(nome=>{
+      if(!ultimasConquistasConhecidas.has(nome)){
+        mostrarToast(`🏅 Nova conquista: ${nome}`, true);
+      }
+    });
+  }
+  ultimasConquistasConhecidas = desbloqueadasAgora;
 }
 
 function calcularNivel(){
@@ -1137,6 +1300,82 @@ function renderDimensaoMiniCard(nome, valor){
     <div style="font-size:26px;font-weight:700;color:${faixa.cor};margin-top:4px;">${valor}</div>
     <div class="progress-bar" style="margin-top:8px;"><div class="fill" style="width:${valor}%;background:${faixa.cor};transition:width 0.8s ease;"></div></div>
   </div>`;
+}
+
+function renderStreak(){
+  const el = document.getElementById('streakCard');
+  if(!el) return;
+  const streak = calcularStreakAtual(70);
+  let cor, mensagem;
+  if(streak === 0){ cor = 'var(--text-dim)'; mensagem = 'Registre hoje pra começar uma sequência!'; }
+  else if(streak < 3){ cor = 'var(--gold)'; mensagem = 'Continue — a consistência vem com repetição.'; }
+  else if(streak < 7){ cor = 'var(--steel)'; mensagem = 'Você está pegando ritmo!'; }
+  else { cor = 'var(--fire)'; mensagem = 'Sequência forte — não deixe esfriar!'; }
+
+  el.innerHTML = `
+    <div style="font-size:13px;color:var(--text-dim);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:4px;">Sequência atual (Nota Geral ≥ 70)</div>
+    <div style="font-size:52px;font-weight:800;color:${cor};line-height:1;">🔥 ${streak}</div>
+    <div style="font-size:13px;color:var(--text-dim);margin-top:6px;">${streak === 1 ? 'dia seguido' : 'dias seguidos'} — ${mensagem}</div>
+  `;
+}
+
+function renderInsights(){
+  const el = document.getElementById('insightsCard');
+  if(!el) return;
+  const insights = gerarInsights();
+  if(!insights.length){
+    el.innerHTML = `<p style="color:var(--text-dim);font-size:13px;margin:0;">Continue registrando — assim que houver dados suficientes (pelo menos 2 semanas), os insights automáticos aparecem aqui.</p>`;
+    return;
+  }
+  const cores = { positivo: 'var(--green)', negativo: 'var(--red)', neutro: 'var(--text-dim)' };
+  el.innerHTML = insights.map(i=>`
+    <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid var(--line);">
+      <span style="font-size:18px;">${i.icone}</span>
+      <span style="font-size:13px;color:${cores[i.tipo]};">${i.texto}</span>
+    </div>
+  `).join('');
+}
+
+function renderRadarDimensoes(){
+  const canvas = document.getElementById('chartRadar');
+  if(!canvas) return;
+  const dias = diasPapisValidos();
+  const janela = janelaDias(dias, 7, 0);
+  const valores = janela.length ? {
+    espiritual: mediaNotas(janela, 'espiritual'),
+    fisica: mediaNotas(janela, 'fisica'),
+    capacitacao: mediaNotas(janela, 'capacitacao'),
+    entretenimento: mediaNotas(janela, 'entretenimento')
+  } : { espiritual:0, fisica:0, capacitacao:0, entretenimento:0 };
+
+  if(chartInstances['radar']) chartInstances['radar'].destroy();
+  chartInstances['radar'] = new Chart(canvas, {
+    type: 'radar',
+    data: {
+      labels: ['Espiritual', 'Física', 'Capacitação', 'Entretenimento'],
+      datasets: [{
+        label: 'Média dos últimos 7 dias',
+        data: [valores.espiritual, valores.fisica, valores.capacitacao, valores.entretenimento],
+        backgroundColor: 'rgba(111,169,140,0.25)',
+        borderColor: '#6FA98C',
+        borderWidth: 2,
+        pointBackgroundColor: '#6FA98C'
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        r: {
+          min: 0, max: 100,
+          ticks: { color: chartTextColor(), backdropColor: 'transparent', showLabelBackdrop: false },
+          grid: { color: chartGridColor() },
+          angleLines: { color: chartGridColor() },
+          pointLabels: { color: chartTextColor(), font: { size: 12 } }
+        }
+      }
+    }
+  });
 }
 
 function renderGaugeGeral(){
@@ -1313,7 +1552,10 @@ function renderResumoSemanal(){
 }
 
 function renderInicio(){
+  renderStreak();
   renderGaugeGeral();
+  renderInsights();
+  renderRadarDimensoes();
   renderRankingPessoal();
   renderResumoSemanal();
   const last = lastMeasurement();
@@ -2961,6 +3203,8 @@ function renderProgressao(){
   `;
 }
 
+let kanbanMostrarSoHoje = true;
+
 function renderKanban(){
   const exerciciosProntos = new Set(analisarProgressao().filter(a=>a.pronto).map(a=>a.exercicio));
   const semanas = uniqueVals(state.kanban,'semana');
@@ -2975,12 +3219,31 @@ function renderKanban(){
     tipos.forEach(t=> fT.innerHTML += `<option value="${t}">${t}</option>`);
     categorias.forEach(c=> fC.innerHTML += `<option value="${c}">${c}</option>`);
   }
-  const filtered = state.kanban.filter(k=>
-    (!fS.value || k.semana===fS.value) &&
-    (!fD.value || diaSemanaDeData(k.dataPrevista)===fD.value) &&
-    (!fT.value || k.tipo===fT.value) &&
-    (!fC.value || k.categoria===fC.value)
-  );
+
+  const hojeISO = new Date().toISOString().slice(0,10);
+  const btnHoje = document.getElementById('btnKanbanHoje');
+  const btnTodas = document.getElementById('btnKanbanTodas');
+  if(btnHoje) btnHoje.classList.toggle('primary', kanbanMostrarSoHoje);
+  if(btnTodas) btnTodas.classList.toggle('primary', !kanbanMostrarSoHoje);
+  ['filterSemana','filterDia','filterTipo','filterCategoria'].forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.style.display = kanbanMostrarSoHoje ? 'none' : '';
+  });
+
+  const filtered = kanbanMostrarSoHoje
+    ? state.kanban.filter(k => k.dataPrevista === hojeISO)
+    : state.kanban.filter(k=>
+        (!fS.value || k.semana===fS.value) &&
+        (!fD.value || diaSemanaDeData(k.dataPrevista)===fD.value) &&
+        (!fT.value || k.tipo===fT.value) &&
+        (!fC.value || k.categoria===fC.value)
+      );
+
+  if(kanbanMostrarSoHoje && !filtered.length){
+    document.getElementById('kanbanBoard').innerHTML = `<p style="color:var(--text-dim);font-size:13px;padding:16px;">Nenhum cartão planejado pra hoje (${hojeISO}) — pode ser um dia fora do período do programa, ou já passou da meta. Clique em "Ver todas as semanas" pra navegar livremente.</p>`;
+    return;
+  }
+
   document.getElementById('kanbanBoard').innerHTML = KANBAN_STATUSES.map(status=>{
     const cards = filtered.filter(k=>k.status===status);
     return `<div class="kanban-col" data-status="${status}">
@@ -3029,6 +3292,7 @@ function renderKanban(){
         cardData.status = newStatus;
         if(newStatus === 'Concluído' && !cardData.dataRealizada){
           cardData.dataRealizada = new Date().toISOString().slice(0,10);
+          mostrarToast('✅ Treino concluído! Mandou bem.', true);
         }
         renderKanban();
         persistirEstadoComDebounce();
@@ -3077,6 +3341,7 @@ function renderKanban(){
         cardData.status = newStatus;
         if(newStatus === 'Concluído' && !cardData.dataRealizada){
           cardData.dataRealizada = new Date().toISOString().slice(0,10);
+          mostrarToast('✅ Treino concluído! Mandou bem.', true);
         }
         renderKanban();
         persistirEstadoComDebounce();
@@ -3088,6 +3353,14 @@ function renderKanban(){
 }
 ['filterSemana','filterDia','filterTipo','filterCategoria'].forEach(id=>{
   document.getElementById(id).addEventListener('change', renderKanban);
+});
+document.getElementById('btnKanbanHoje').addEventListener('click', ()=>{
+  kanbanMostrarSoHoje = true;
+  renderKanban();
+});
+document.getElementById('btnKanbanTodas').addEventListener('click', ()=>{
+  kanbanMostrarSoHoje = false;
+  renderKanban();
 });
 
 function renderAll(){
@@ -3110,6 +3383,7 @@ function renderAll(){
   renderKanban();
   persistirEstadoComDebounce();
   verificarAvisoBackup();
+  verificarMicrofeedback();
 }
 
 document.querySelectorAll('nav.tabs button').forEach(btn=>{

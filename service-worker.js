@@ -1,4 +1,4 @@
-const CACHE_NAME = 'papis-nota10-cache-v15';
+const CACHE_NAME = 'papis-nota10-cache-v16';
 const ASSETS_TO_CACHE = [
   './index.html',
   './manifest.json',
